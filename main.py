@@ -1,30 +1,41 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from together_ai import analyze_product_name
+from meta_ad_library import search_meta_ads
+from dotenv import load_dotenv 
+from ad_analysis import analyze_ads, idea_from_ads
+import os
 
-# Initialize FastAPI app
+
+load_dotenv()
+
 app = FastAPI()
 
-# Define a data model for request body
-class Item(BaseModel):
-    name: str
-    description: Optional[str] = None
-    price: float
-    tax: Optional[float] = None
+class AdAnalysisRequest(BaseModel):
+    product_name: str
+    company_name: str
 
-# Define a basic root endpoint
-@app.get("/")
-async def read_root():
-    return {"message": "Welcome to the FastAPI backend!"}
+class AdAnalysisResponse(BaseModel):
+    keyword: str
+    ads: dict
 
-# Define a get endpoint with a path parameter
-@app.get("/items/{item_id}")
-async def read_item(item_id: int, q: Optional[str] = None):
-    return {"item_id": item_id, "query": q}
+@app.post("/analyseMetaAds")
+async def analyse_meta_ads(request: AdAnalysisRequest):
+    try:
+        ads_data = analyze_ads(request.product_name, request.company_name)
 
-# Define a post endpoint to create an item
-@app.post("/items/")
-async def create_item(item: Item):
-    item_dict = item.dict()
-    item_dict["price_with_tax"] = item.price + (item.tax if item.tax else 0)
-    return item_dict
+        ads_idea = idea_from_ads(ads_data, request.product_name)
+        print("ad ideas are")
+        print(ads_idea)
+
+        return {"ads_idea": ads_idea}
+    
+        # # Analyze product name to get search keyword
+        # keyword = analyze_product_name(request.product_name, request.company_name)
+
+        # # Search Meta Ad Library API using the generated keyword
+        # ads = search_meta_ads(keyword)
+
+        #return AdAnalysisResponse(keyword=keyword, ads=ads)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
