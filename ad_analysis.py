@@ -1,104 +1,128 @@
-
-from together_ai import analyze_product_name, validate_with_together_ai, idea_from_ads_using_together
+from together_ai import (
+    analyze_product_name,
+    validate_with_together_ai,
+    idea_from_ad_text_using_together,
+    idea_from_ad_image_using_together,
+)
 from meta_ad_library import search_meta_ads
 import requests
 import json
 
-def analyze_ads(product_name, company_name):
-    keyword = analyze_product_name(product_name, company_name)
-    print("Got keyword-> ", keyword)
 
-    # meta_ads = search_meta_ads(keyword)
+def fetch_and_analyze_competitor_ads(product_name: str, company_name: str) -> list:
+    search_keyword = analyze_product_name(product_name, company_name)
+    print("Generated search keyword -> ", search_keyword)
 
-    # Laoding example json
-    with open("exampleJson.json", 'r') as file:
-        meta_ads = json.load(file)
+    # meta_ads = search_meta_ads(search_keyword)
 
-    print("Ads from meta are:- ", meta_ads)
-    ads = []
-    continuation_token = meta_ads.get("continuation_token")
-    max_ads = 5
-    print("Analysing the ads")
+    # Loading example ad data
+    with open("exampleJson.json", "r", encoding="utf-8") as file:
+        meta_ad_response = json.load(file)
 
-    while len(ads) < max_ads:
-        for ad_group in meta_ads.get("results", []):
-            for ad in ad_group:
+    print("Retrieved Meta ads: ", meta_ad_response)
+    relevant_ads = []
+    continuation_token = meta_ad_response.get("continuation_token")
+    MAX_ADS_TO_COLLECT = 5
+    print("Analyzing ad content")
+
+    while len(relevant_ads) < MAX_ADS_TO_COLLECT:
+        for ad_group in meta_ad_response.get("results", []):
+            for ad_data in ad_group:
                 try:
-                    # Ensure 'page_name' does not match the provided company name
-                    page_name = ad.get("pageName")
-                    if page_name == company_name:
-                        continue  # Skip this ad if it matches the company name
+                    # Skip ads from the requesting company
+                    advertiser_name = ad_data.get("pageName")
+                    if advertiser_name == company_name:
+                        continue
 
-                    # Extract images from snapshot
-                    snapshot = ad.get("snapshot", {})
-                    image_url = None
-                    
-                    # Check images array
-                    images = snapshot.get("images", [])
-                    for image in images:
-                        image_url = image.get("resized_image_url")
-                        if image_url:
+                    # Extract ad media content
+                    ad_snapshot = ad_data.get("snapshot", {})
+                    ad_image_url = None
+
+                    # Check primary images array
+                    ad_images = ad_snapshot.get("images", [])
+                    for image_data in ad_images:
+                        ad_image_url = image_data.get("resized_image_url")
+                        if ad_image_url:
                             break
-                    
-                    # If no image found in images array, check cards array
-                    if not image_url:
-                        cards = snapshot.get("cards", [])
-                        if cards:
-                            first_card = cards[0]
-                            image_url = first_card.get("resized_image_url")
 
-                    # Skip this ad if no valid image URL is found
-                    if not image_url:
+                    # Fallback to cards array for image
+                    if not ad_image_url:
+                        ad_cards = ad_snapshot.get("cards", [])
+                        if ad_cards:
+                            first_card = ad_cards[0]
+                            ad_image_url = first_card.get("resized_image_url")
+
+                    if not ad_image_url:
                         continue
 
-                    # Extract ad text from body -> markup -> __html
-                    body = snapshot.get("body", {})
-                    markup = body.get("markup", {})
-                    ad_text = markup.get("__html")
+                    # Extract ad copy text
+                    ad_body = ad_snapshot.get("body", {})
+                    ad_markup = ad_body.get("markup", {})
+                    ad_copy = ad_markup.get("__html")
 
-                    # Skip this ad if no ad text is present
-                    if not ad_text:
+                    if not ad_copy:
                         continue
 
-                    # Send ad text to Together AI for validation
-                    if validate_with_together_ai(ad_text, keyword):
-                        ads.append({"image_url": image_url, "text": ad_text , "page_name":page_name})
-                        print("Got our ", len(ads) , " ad, from company ", page_name)
+                    # Validate ad relevance
+                    if validate_with_together_ai(ad_copy, search_keyword):
+                        relevant_ads.append(
+                            {
+                                "image_url": ad_image_url,
+                                "text": ad_copy,
+                                "page_name": advertiser_name,
+                            }
+                        )
+                        print(
+                            f"Found relevant ad #{len(relevant_ads)} from advertiser {advertiser_name}"
+                        )
 
-                        # Stop if we have reached the maximum required ads
-                        if len(ads) >= max_ads:
+                        if len(relevant_ads) >= MAX_ADS_TO_COLLECT:
                             break
 
                 except KeyError as e:
-                    print(f"Skipping ad due to missing key: {e}")
-                    continue  # Skip to the next ad if any required key is missing
-            
-            # Check if maximum ads are collected
-            if len(ads) >= max_ads:
+                    print(f"Skipping malformed ad data: {e}")
+                    continue
+
+            if len(relevant_ads) >= MAX_ADS_TO_COLLECT:
                 break
 
-        # If there are no more ads to process or we have collected enough, exit loop
-        if len(ads) >= max_ads or not continuation_token:
+        if len(relevant_ads) >= MAX_ADS_TO_COLLECT or not continuation_token:
             break
 
-        # Paginate to next page if necessary
+        # Fetch next page of results if needed
         if continuation_token:
-            meta_ads = search_meta_ads(meta_ads["query"], continuation_token)
-            continuation_token = meta_ads.get("continuation_token")
-            if not meta_ads.get("results"):
-                print("Re-fetching data as empty response was returned.")
-                meta_ads = search_meta_ads(meta_ads["query"], continuation_token)
-    print("json analysis done")
-    print("here are ads ", ads)
-    return ads
+            meta_ad_response = search_meta_ads(
+                meta_ad_response["query"], continuation_token
+            )
+            continuation_token = meta_ad_response.get("continuation_token")
+            if not meta_ad_response.get("results"):
+                print("Retrying fetch due to empty response")
+                meta_ad_response = search_meta_ads(
+                    meta_ad_response["query"], continuation_token
+                )
 
-def idea_from_ads(ads : dict, product_name):
-    ideas = []
+    print("Ad analysis complete")
+    print("Collected ads: ", relevant_ads)
+    return relevant_ads
 
-    for ad in ads:
-        idea = idea_from_ads_using_together(ad["text"], ad["image_url"], product_name)
-        print("idea generated ", idea)
-        ideas.append({"ad_text": ad["text"], "image_url": ad["image_url"], "idea":idea})
 
-    return ideas
-                        
+def generate_ad_ideas(competitor_ads: list, product_name: str) -> list:
+    ad_ideas = []
+
+    for ad in competitor_ads:
+        generate_text_idea = idea_from_ad_text_using_together(ad["text"], product_name)
+        print("Generated text idea -> ", generate_text_idea)
+        generate_image_idea = idea_from_ad_image_using_together(
+            ad["image_url"], product_name
+        )
+        print("Generated image idea -> ", generate_image_idea)
+        ad_ideas.append(
+            {
+                "ad_text": ad["text"],
+                "image_url": ad["image_url"],
+                "image_prompt": generate_text_idea,
+                "text_prompt": generate_image_idea,
+            }
+        )
+
+    return ad_ideas
