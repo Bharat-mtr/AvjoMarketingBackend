@@ -120,8 +120,8 @@ def generate_ad_ideas(competitor_ads: list, product_name: str) -> list:
             {
                 "ad_text": ad["text"],
                 "image_url": ad["image_url"],
-                "image_prompt": generate_text_idea,
-                "text_prompt": generate_image_idea,
+                "text_prompt": generate_text_idea,
+                "image_prompt": generate_image_idea,
             }
         )
 
