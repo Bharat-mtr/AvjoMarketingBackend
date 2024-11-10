@@ -36,6 +36,11 @@ class AdvertisementIdea(BaseModel):
         description="Template-style advertising concept that can be adapted for different products",
     )
 
+class AdvertisementText(BaseModel):
+    advertisement_text: str = Field(
+        description="The final generated marketing advertisement post for the product or service",
+    )
+
 
 def analyze_text(
     prompt: str, schema, model: str = "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"
@@ -144,8 +149,8 @@ Guidelines:
     if user_input:
         prompt += f"\n\nAdditional Requirements:\n{user_input}"
 
-    result = analyze_text(prompt, AdvertisementIdea)
-    return result
+    result = analyze_text(prompt, AdvertisementText)
+    return result["advertisement_text"]
 
 
 def analyze_product_name(product_name: str, company_name: str) -> str:
